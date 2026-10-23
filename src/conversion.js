@@ -139,6 +139,6 @@ var TLConversion = (() => {
     const serialize=doc=>new env.XMLSerializer().serializeToString(doc);
     return {'docProps/custom.xml':serialize(props),'_rels/.rels':serialize(rels),'[Content_Types].xml':serialize(types)};
   }
-  return {convert,identity,match,citeItems,documentSettings};
+  return {convert,identity,match,citeItems,documentSettings,scan,writeCode};
 })();
 if(typeof module!=='undefined')module.exports=TLConversion;

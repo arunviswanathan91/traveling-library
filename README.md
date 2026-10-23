@@ -2,11 +2,11 @@
 
 Import references embedded in an EndNote-cited Word document into the collection selected in Zotero. EndNote itself and an EndNote `.enl` library are not required when the document contains its traveling-library metadata.
 
-**Version 0.3.2 — experimental.** Targets Zotero 7 through 10 desktop. Parsing and matching have automated tests; installation, native translation and database writes still require verification in a running Zotero client. The compatibility range in the manifest permits installation; it is not a claim that every platform/version has been tested.
+**Version 0.4.0 — experimental.** Targets Zotero 7 through 10 desktop. Parsing and matching have automated tests; installation, native translation and database writes still require verification in a running Zotero client. The compatibility range in the manifest permits installation; it is not a claim that every platform/version has been tested.
 
 ## Download and install
 
-[Download traveling-library-0.3.2.xpi](https://github.com/arunviswanathan91/traveling-library/raw/refs/heads/main/dist/traveling-library-0.3.2.xpi)
+[Download traveling-library-0.4.0.xpi](https://github.com/arunviswanathan91/traveling-library/raw/refs/heads/main/dist/traveling-library-0.4.0.xpi)
 
 1. Save the `.xpi` file. Do not unzip it.
 2. In Zotero, open **Tools → Plugins** (called **Add-ons** in some versions).
@@ -50,7 +50,7 @@ npm test
 npm run build
 ```
 
-The deterministic build writes `dist/traveling-library-0.3.2.xpi` and `dist/SHA256SUMS`. Only files under `src/` enter the XPI. Tests use synthetic records. Manuscripts, recovered references, local paths and user libraries must never be committed.
+The deterministic build writes `dist/traveling-library-0.4.0.xpi` and `dist/SHA256SUMS`. Only files under `src/` enter the XPI. Tests use synthetic records. Manuscripts, recovered references, local paths and user libraries must never be committed.
 
 - `src/core.js`: XML extraction and duplicate planning, independent of Zotero.
 - `src/bootstrap.js`: plugin lifecycle, DOCX ZIP reading, native translation and transactional import.
@@ -149,3 +149,16 @@ After installing 0.3.1, fully quit and reopen Zotero before retrying conversion.
 ### 0.3.2 — citation-style picker layout
 
 Replaces the native HTML select popup, which overlapped dialog contents on Windows, with an inline scrollable radio list. Search filters installed styles without changing the selection. The selected style is shown explicitly, long names wrap, and the taller conversion dialog keeps the Save and Cancel controls accessible.
+
+
+## 0.4.0 — Zotero to EndNote (experimental)
+
+Choose **Tools → Convert Zotero citations to EndNote…** in Zotero 8–10. Select a saved standard DOCX containing Zotero fields, review the conversion counts, then save a new `-EndNote.docx` copy. No destination collection is required. The command uses embedded CSL metadata, not live library edits: refresh and save the original using Zotero first if references have changed.
+
+In desktop Word with EndNote installed, test **Export to EndNote → Export Traveling Library** into a **new** EndNote library. Select an EndNote output style and test **Update Citations and Bibliography** and **Edit & Manage Citation(s)**. Do not unformat the converted copy before validating it. These are required desktop acceptance checks: EndNote recognition is not established by our XML tests. Official traveling-library workflow: https://docs.endnote.com/docs/endnote/2025/v1/windows/en/content/09word/exporting_wrdtvlglibtoen.htm
+
+The converter writes inline `ADDIN EN.CITE` traveling-library fields and `ADDIN EN.REFLIST`, removes Zotero document preferences, and preserves existing displayed results and unrelated package contents. Repeated item identities share generated EndNote record numbers. It preserves group order, page locators, prefixes, suffixes and author suppression. EndNote formatting may subsequently reorder citations. New database and record identifiers do not refer to an existing `.enl` library; this is a newly generated EndNote document, not restoration of original EndNote IDs or exact style formatting.
+
+Supported CSL types: journal/magazine/newspaper articles, generic articles, books, chapters, reports, theses, webpages, conference papers, manuscripts and software. Core fields map to EndNote XML: creators, titles, journal names/abbreviations, date, volume/issue/pages, edition/version, publisher/place, identifiers, URL, abstract and language. The exact original CSL object is also embedded as research-notes for fields without direct mappings; EndNote may omit notes/abstracts when exporting a traveling library, so retain the original DOCX. This does not recover attachments or Zotero library notes absent from citation metadata.
+
+Unsupported reference types, non-page locators, author-only/custom citation modes, manually changed citation text, conflicting/missing embedded metadata, customized bibliographies, mixed managers, tracked citation changes and unsupported field locations stop conversion before saving. Both conversion directions keep the source document unchanged. No Word/EndNote automation or `.enl` creation occurs.

@@ -9,3 +9,6 @@ traveling-library-recover =
 
 traveling-library-convert =
     .label = Convert EndNote citations to Zotero…
+
+traveling-library-reverse =
+    .label = Convert Zotero citations to EndNote…

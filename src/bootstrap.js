@@ -6,12 +6,12 @@ function loadPluginScripts(rootURI) {
   const loaded = { Zotero, Services, Cc, Ci };
   // The JAR URI may stay the same across hot updates. Never mix scripts from
   // the previous XPI's bytecode cache with the newly installed bootstrap.
-  for (const file of ['core.js','verification.js','metadata.js','conversion.js']) {
+  for (const file of ['core.js','verification.js','metadata.js','conversion.js','reverse.js']) {
     Services.scriptloader.loadSubScriptWithOptions(rootURI + file, { target: loaded, ignoreCache: true });
   }
   const required = { TLCore: ['decodePayload','extract','doi','parseXML','plan'],
     TLVerification: ['compare'], TLMetadata: ['read','note','supplement'],
-    TLConversion: ['convert','documentSettings'] };
+    TLConversion: ['convert','documentSettings','scan','writeCode'], TLReverse: ['convert'] };
   for (const [module, methods] of Object.entries(required)) {
     if (methods.some(method => typeof loaded[module]?.[method] !== 'function')) {
       throw new Error('Traveling Library could not load a complete set of plugin files. Fully quit and reopen Zotero. If this persists, reinstall the latest XPI.');
@@ -50,6 +50,10 @@ async function startup({ rootURI }) {
   if(Zotero.MenuManager)menuIDs.push(Zotero.MenuManager.registerMenu({
     menuID:'traveling-library-convert',pluginID:PLUGIN_ID,target:'main/menubar/tools',
     menus:[{menuType:'menuitem',l10nID:'traveling-library-convert',onCommand:()=>runConversion(Zotero.getMainWindow())}]
+  }));
+  if(Zotero.MenuManager)menuIDs.push(Zotero.MenuManager.registerMenu({
+    menuID:'traveling-library-reverse',pluginID:PLUGIN_ID,target:'main/menubar/tools',
+    menus:[{menuType:'menuitem',l10nID:'traveling-library-reverse',onCommand:()=>runReverseConversion(Zotero.getMainWindow())}]
   }));
   for (const window of Zotero.getMainWindows()) addMenu(window);
 }
@@ -107,7 +111,7 @@ function readDocx(path, forConversion=false) {
   } finally { zip.close(); }
   return parts;
 }
-async function chooseFile(window) {
+async function chooseFile(window, title='Choose a saved Word document containing EndNote citations') {
   let FilePicker;
   if (parseInt(Zotero.version, 10) >= 8) {
     ({ FilePicker } = ChromeUtils.importESModule('chrome://zotero/content/modules/filePicker.mjs'));
@@ -115,7 +119,7 @@ async function chooseFile(window) {
     ({ FilePicker } = ChromeUtils.import('chrome://zotero/content/modules/filePicker.jsm'));
   }
   const picker = new FilePicker();
-  picker.init(window, 'Choose a saved Word document containing EndNote citations', picker.modeOpen);
+  picker.init(window, title, picker.modeOpen);
   picker.appendFilter('Word documents', '*.docx');
   if (await picker.show() !== picker.returnOK) return null;
   return picker.file;
@@ -438,12 +442,12 @@ async function recoverSelected(window) {
   finally{running=false;}
 }
 
-async function saveConvertedCopy(window,source,changes) {
+async function saveConvertedCopy(window,source,changes,target='Zotero') {
   let FilePicker;
   if(parseInt(Zotero.version,10)>=8)({FilePicker}=ChromeUtils.importESModule('chrome://zotero/content/modules/filePicker.mjs'));
   else ({FilePicker}=ChromeUtils.import('chrome://zotero/content/modules/filePicker.jsm'));
-  const picker=new FilePicker();picker.init(window,'Save converted Zotero document',picker.modeSave);picker.appendFilter('Word document','*.docx');
-  picker.defaultString=source.split(/[\\/]/).pop().replace(/\.docx$/i,'')+'-Zotero.docx';
+  const picker=new FilePicker();picker.init(window,'Save converted '+target+' document',picker.modeSave);picker.appendFilter('Word document','*.docx');
+  picker.defaultString=source.split(/[\\/]/).pop().replace(/\.docx$/i,'')+'-'+target+'.docx';
   if(await picker.show()===picker.returnCancel)return null;
   let output=picker.file;if(!/\.docx$/i.test(output))output+='.docx';
   if(output.toLowerCase()===source.toLowerCase()||await IOUtils.exists(output))throw new Error('Choose a new filename. Existing documents are never overwritten.');
@@ -490,5 +494,20 @@ async function runConversion(window) {
     const path=await saveConvertedCopy(window,source,result.changes);if(!path)return;
     Services.prompt.alert(window,'Traveling Library',`Saved: ${path}\n\n${result.citations} citation groups and ${result.bibliographies} bibliography fields converted.\n\nOpen this copy in desktop Word and click Zotero → Refresh. Test Add/Edit Citation on a citation. The current displayed text is retained until Refresh. The original document is unchanged.`+(result.bibliographies?'':'\nNo EndNote bibliography field was present; use Zotero → Add/Edit Bibliography.'));
   } catch(error){Zotero.logError(error);Services.prompt.alert(window,'Traveling Library',error.message || String(error));}
+  finally{running=false;}
+}
+
+async function runReverseConversion(window) {
+  if(running)return;running=true;
+  try {
+    if(parseInt(Zotero.version,10)<8)throw new Error('Document conversion requires Zotero 8 or newer.');
+    const source=await chooseFile(window,'Choose a saved Word document containing Zotero citations');if(!source)return;
+    const result=scope.TLReverse.convert(readDocx(source,true),window,scope.TLCore,scope.TLConversion,()=>Zotero.randomString(24));
+    const args={accepted:false,name:source.split(/[\\/]/).pop(),result:{citations:result.citations,bibliographies:result.bibliographies,uniqueReferences:result.uniqueReferences}};
+    window.openDialog('chrome://traveling-library/content/reverse.xhtml','traveling-library-reverse','chrome,centerscreen,resizable,dialog,modal,width=700,height=560',args);
+    if(!args.accepted)return;
+    const path=await saveConvertedCopy(window,source,result.changes,'EndNote');if(!path)return;
+    Services.prompt.alert(window,'Traveling Library',`Saved: ${path}\n\n${result.citations} citation groups, ${result.uniqueReferences} references and ${result.bibliographies} bibliography fields converted.\n\nOpen the copy in Word with EndNote installed. Export its Traveling Library to a NEW EndNote library, select the EndNote style, and test Update Citations and Bibliography and Edit & Manage Citation(s).\n\nThe original document is unchanged. EndNote desktop recognition remains experimental; do not unformat the copy before testing it.`);
+  }catch(error){Zotero.logError(error);Services.prompt.alert(window,'Traveling Library',error.message||String(error));}
   finally{running=false;}
 }
