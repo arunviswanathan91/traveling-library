@@ -482,7 +482,7 @@ async function runConversion(window) {
     const styles=Zotero.Styles.getVisible().filter(s=>s.class==='in-text'&&s.hasBibliography).map(s=>({id:s.styleID,title:s.title}));
     if(!styles.length)throw new Error('Install an in-text citation style with a bibliography in Zotero Settings → Cite first.');
     const args={accepted:false,styles,result:{citations:result.citations,bibliographies:result.bibliographies,itemOccurrences:result.itemOccurrences},name:source.split(/[\\/]/).pop()};
-    window.openDialog('chrome://traveling-library/content/convert.xhtml','traveling-library-convert','chrome,centerscreen,resizable,dialog,modal,width=650,height=480',args);
+    window.openDialog('chrome://traveling-library/content/convert.xhtml','traveling-library-convert','chrome,centerscreen,resizable,dialog,modal,width=720,height=740',args);
     if(!args.accepted)return;
     if(!styles.some(s=>s.id===args.styleID))throw new Error('Select a valid citation style.');
     const data=new Zotero.Integration.DocumentData();data.sessionID=Zotero.randomString(16);data.style={styleID:args.styleID,hasBibliography:true,bibliographyStyleHasBeenSet:false};data.prefs={fieldType:'Field',noteType:0,automaticJournalAbbreviations:false};

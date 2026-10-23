@@ -2,11 +2,11 @@
 
 Import references embedded in an EndNote-cited Word document into the collection selected in Zotero. EndNote itself and an EndNote `.enl` library are not required when the document contains its traveling-library metadata.
 
-**Version 0.3.1 — experimental.** Targets Zotero 7 through 10 desktop. Parsing and matching have automated tests; installation, native translation and database writes still require verification in a running Zotero client. The compatibility range in the manifest permits installation; it is not a claim that every platform/version has been tested.
+**Version 0.3.2 — experimental.** Targets Zotero 7 through 10 desktop. Parsing and matching have automated tests; installation, native translation and database writes still require verification in a running Zotero client. The compatibility range in the manifest permits installation; it is not a claim that every platform/version has been tested.
 
 ## Download and install
 
-[Download traveling-library-0.3.1.xpi](https://github.com/arunviswanathan91/traveling-library/raw/refs/heads/main/dist/traveling-library-0.3.1.xpi)
+[Download traveling-library-0.3.2.xpi](https://github.com/arunviswanathan91/traveling-library/raw/refs/heads/main/dist/traveling-library-0.3.2.xpi)
 
 1. Save the `.xpi` file. Do not unzip it.
 2. In Zotero, open **Tools → Plugins** (called **Add-ons** in some versions).
@@ -50,7 +50,7 @@ npm test
 npm run build
 ```
 
-The deterministic build writes `dist/traveling-library-0.3.1.xpi` and `dist/SHA256SUMS`. Only files under `src/` enter the XPI. Tests use synthetic records. Manuscripts, recovered references, local paths and user libraries must never be committed.
+The deterministic build writes `dist/traveling-library-0.3.2.xpi` and `dist/SHA256SUMS`. Only files under `src/` enter the XPI. Tests use synthetic records. Manuscripts, recovered references, local paths and user libraries must never be committed.
 
 - `src/core.js`: XML extraction and duplicate planning, independent of Zotero.
 - `src/bootstrap.js`: plugin lifecycle, DOCX ZIP reading, native translation and transactional import.
@@ -144,3 +144,8 @@ Automated tests validate field JSON, grouped citations, nested DATA removal, pre
 The reported `core.decodePayload is not a function` error means the running converter did not receive the parser API shipped in 0.3.0. The released 0.3.0 source and XPI both contain that export; stale runtime scripts after an in-place update are a suspected cause, not a confirmed desktop diagnosis. Startup now loads all four modules with Firefox's script cache bypass enabled into a fresh scope, then checks their required APIs before registering commands. Conversion also checks its parser once before scanning fields, preventing hundreds of repeated errors if incompatible scripts are loaded.
 
 After installing 0.3.1, fully quit and reopen Zotero before retrying conversion. The failed preflight did not save or overwrite a document, and references do not need to be reimported. Regression tests exercise startup with a simulated stale script cache and missing parser APIs; actual Windows desktop behavior still needs confirmation.
+
+
+### 0.3.2 — citation-style picker layout
+
+Replaces the native HTML select popup, which overlapped dialog contents on Windows, with an inline scrollable radio list. Search filters installed styles without changing the selection. The selected style is shown explicitly, long names wrap, and the taller conversion dialog keeps the Save and Cancel controls accessible.
