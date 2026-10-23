@@ -159,6 +159,6 @@ var TLCore = (() => {
     });
   }
   const escapeHTML = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  return { identifiers, extract, doi, parseXML, asEndNoteXML, plan, escapeHTML };
+  return { decodePayload, identifiers, extract, doi, parseXML, asEndNoteXML, plan, escapeHTML };
 })();
 if (typeof module !== 'undefined') module.exports = TLCore;

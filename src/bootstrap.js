@@ -7,6 +7,7 @@ async function startup({ rootURI }) {
   Services.scriptloader.loadSubScript(rootURI + 'core.js', scope);
   Services.scriptloader.loadSubScript(rootURI + 'verification.js', scope);
   Services.scriptloader.loadSubScript(rootURI + 'metadata.js', scope);
+  Services.scriptloader.loadSubScript(rootURI + 'conversion.js', scope);
   chromeHandle = Cc['@mozilla.org/addons/addon-manager-startup;1']
     .getService(Ci.amIAddonManagerStartup)
     .registerChrome(Services.io.newURI(rootURI + 'manifest.json'), [
@@ -33,6 +34,10 @@ async function startup({ rootURI }) {
     menuID:'traveling-library-recover',pluginID:PLUGIN_ID,target:'main/menubar/tools',
     menus:[{menuType:'menuitem',l10nID:'traveling-library-recover',onCommand:()=>recoverSelected(Zotero.getMainWindow())}]
   }));
+  if(Zotero.MenuManager)menuIDs.push(Zotero.MenuManager.registerMenu({
+    menuID:'traveling-library-convert',pluginID:PLUGIN_ID,target:'main/menubar/tools',
+    menus:[{menuType:'menuitem',l10nID:'traveling-library-convert',onCommand:()=>runConversion(Zotero.getMainWindow())}]
+  }));
   for (const window of Zotero.getMainWindows()) addMenu(window);
 }
 function addMenu(window) {
@@ -56,7 +61,7 @@ function shutdown() {
   chromeHandle = null;
   scope = null;
 }
-function readDocx(path) {
+function readDocx(path, forConversion=false) {
   const file = Cc['@mozilla.org/file/local;1'].createInstance(Ci.nsIFile);
   file.initWithPath(path);
   if (file.fileSize > 200 * 1024 * 1024) throw new Error('This document exceeds the 200 MB input limit.');
@@ -66,10 +71,11 @@ function readDocx(path) {
   zip.open(file);
   try {
     if (!zip.hasEntry('word/document.xml')) throw new Error('Select an unencrypted .docx Word document.');
-    const entries = zip.findEntries('word/*.xml');
+    if(forConversion && zip.findEntries('_xmlsignatures/*').hasMore())throw new Error('Digitally signed documents are not supported for conversion.');
+    const entries = zip.findEntries(forConversion ? '*' : 'word/*.xml');
     while (entries.hasMore()) {
       const name = entries.getNext();
-      if (!/^word\/(document|footnotes|endnotes|header\d*|footer\d*)\.xml$/.test(name)) continue;
+      if (forConversion ? !(/^word\/.*\.xml$/.test(name)||['docProps/custom.xml','[Content_Types].xml','_rels/.rels'].includes(name)) : !/^word\/(document|footnotes|endnotes|header\d*|footer\d*)\.xml$/.test(name)) continue;
       const entry = zip.getEntry(name);
       total += entry.realSize;
       if (entry.realSize > 64 * 1024 * 1024 || total > 128 * 1024 * 1024) {
@@ -416,5 +422,60 @@ async function recoverSelected(window) {
     }
     Services.prompt.alert(window,'Traveling Library',`${completed} references checked for recoverable source metadata. Existing values were preserved. No online requests were made.`+(errors.length?'\nErrors:\n'+errors.join('\n'):''));
   } catch(error){Services.prompt.alert(window,'Traveling Library',error.message);}
+  finally{running=false;}
+}
+
+async function saveConvertedCopy(window,source,changes) {
+  let FilePicker;
+  if(parseInt(Zotero.version,10)>=8)({FilePicker}=ChromeUtils.importESModule('chrome://zotero/content/modules/filePicker.mjs'));
+  else ({FilePicker}=ChromeUtils.import('chrome://zotero/content/modules/filePicker.jsm'));
+  const picker=new FilePicker();picker.init(window,'Save converted Zotero document',picker.modeSave);picker.appendFilter('Word document','*.docx');
+  picker.defaultString=source.split(/[\\/]/).pop().replace(/\.docx$/i,'')+'-Zotero.docx';
+  if(await picker.show()===picker.returnCancel)return null;
+  let output=picker.file;if(!/\.docx$/i.test(output))output+='.docx';
+  if(output.toLowerCase()===source.toLowerCase()||await IOUtils.exists(output))throw new Error('Choose a new filename. Existing documents are never overwritten.');
+  const temp=output+'.tmp-'+Zotero.randomString(12),entryTemp=temp+'.xml';let writer;
+  try {
+    await IOUtils.copy(source,temp,{noOverwrite:true});
+    writer=Cc['@mozilla.org/zipwriter;1'].createInstance(Ci.nsIZipWriter);
+    writer.open(Zotero.File.pathToFile(temp),0x04);
+    for(const [name,xml] of Object.entries(changes)) {
+      await Zotero.File.putContentsAsync(entryTemp,xml);
+      if(writer.hasEntry(name))writer.removeEntry(name,false);
+      writer.addEntryFile(name,Ci.nsIZipWriter.COMPRESSION_DEFAULT,Zotero.File.pathToFile(entryTemp),false);
+    }
+    writer.close();writer=null;
+    // Read the finalized ZIP before exposing it as the output document.
+    const verify=readDocx(temp,true);
+    for(const [name,xml] of Object.entries(changes))if(verify[name]!==xml)throw new Error('Converted ZIP validation failed for '+name);
+    await IOUtils.move(temp,output,{noOverwrite:true});return output;
+  } finally {
+    try{writer?.close();}finally{await IOUtils.remove(temp,{ignoreAbsent:true});await IOUtils.remove(entryTemp,{ignoreAbsent:true});}
+  }
+}
+async function runConversion(window) {
+  if(running)return;running=true;
+  try {
+    if(parseInt(Zotero.version,10)<8)throw new Error('Document conversion requires Zotero 8 or newer.');
+    const collection=window.ZoteroPane.getSelectedCollection();
+    if(!collection)throw new Error('Select the collection containing your imported references first.');
+    const source=await chooseFile(window);if(!source)return;
+    const parts=readDocx(source,true);
+    const items=(await Zotero.Items.getAll(collection.libraryID,true,false)).filter(i=>i.isRegularItem()&&!i.deleted);
+    await Zotero.Items.loadDataTypes(items);
+    const mapped=items.map(i=>({id:i.id,title:i.getField('title'),DOI:i.getField('DOI'),extra:i.getField('extra'),uri:Zotero.URI.getItemURI(i),itemData:Zotero.Utilities.Item.itemToCSLJSON(i)}));
+    const result=scope.TLConversion.convert(parts,mapped,window,scope.TLCore,Zotero.Utilities.Internal.md5,()=>Zotero.randomString(16));
+    await Zotero.Styles.init();
+    const styles=Zotero.Styles.getVisible().filter(s=>s.class==='in-text'&&s.hasBibliography).map(s=>({id:s.styleID,title:s.title}));
+    if(!styles.length)throw new Error('Install an in-text citation style with a bibliography in Zotero Settings → Cite first.');
+    const args={accepted:false,styles,result:{citations:result.citations,bibliographies:result.bibliographies,itemOccurrences:result.itemOccurrences},name:source.split(/[\\/]/).pop()};
+    window.openDialog('chrome://traveling-library/content/convert.xhtml','traveling-library-convert','chrome,centerscreen,resizable,dialog,modal,width=650,height=480',args);
+    if(!args.accepted)return;
+    if(!styles.some(s=>s.id===args.styleID))throw new Error('Select a valid citation style.');
+    const data=new Zotero.Integration.DocumentData();data.sessionID=Zotero.randomString(16);data.style={styleID:args.styleID,hasBibliography:true,bibliographyStyleHasBeenSet:false};data.prefs={fieldType:'Field',noteType:0,automaticJournalAbbreviations:false};
+    Object.assign(result.changes,scope.TLConversion.documentSettings(parts,window,scope.TLCore,data.serialize()));
+    const path=await saveConvertedCopy(window,source,result.changes);if(!path)return;
+    Services.prompt.alert(window,'Traveling Library',`Saved: ${path}\n\n${result.citations} citation groups and ${result.bibliographies} bibliography fields converted.\n\nOpen this copy in desktop Word and click Zotero → Refresh. Test Add/Edit Citation on a citation. The current displayed text is retained until Refresh. The original document is unchanged.`+(result.bibliographies?'':'\nNo EndNote bibliography field was present; use Zotero → Add/Edit Bibliography.'));
+  } catch(error){Zotero.logError(error);Services.prompt.alert(window,'Traveling Library',error.message || String(error));}
   finally{running=false;}
 }

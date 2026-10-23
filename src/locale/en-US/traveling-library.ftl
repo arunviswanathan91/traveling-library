@@ -6,3 +6,6 @@ traveling-library-verify =
 
 traveling-library-recover =
     .label = Recover embedded metadata for selected references…
+
+traveling-library-convert =
+    .label = Convert EndNote citations to Zotero…

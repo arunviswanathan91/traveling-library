@@ -2,11 +2,11 @@
 
 Import references embedded in an EndNote-cited Word document into the collection selected in Zotero. EndNote itself and an EndNote `.enl` library are not required when the document contains its traveling-library metadata.
 
-**Version 0.2.2 — experimental.** Targets Zotero 7 through 10 desktop. Parsing and matching have automated tests; installation, native translation and database writes still require verification in a running Zotero client. The compatibility range in the manifest permits installation; it is not a claim that every platform/version has been tested.
+**Version 0.3.0 — experimental.** Targets Zotero 7 through 10 desktop. Parsing and matching have automated tests; installation, native translation and database writes still require verification in a running Zotero client. The compatibility range in the manifest permits installation; it is not a claim that every platform/version has been tested.
 
 ## Download and install
 
-[Download traveling-library-0.2.2.xpi](https://github.com/arunviswanathan91/traveling-library/raw/refs/heads/main/dist/traveling-library-0.2.2.xpi)
+[Download traveling-library-0.3.0.xpi](https://github.com/arunviswanathan91/traveling-library/raw/refs/heads/main/dist/traveling-library-0.3.0.xpi)
 
 1. Save the `.xpi` file. Do not unzip it.
 2. In Zotero, open **Tools → Plugins** (called **Add-ons** in some versions).
@@ -32,7 +32,7 @@ The plugin operates inside the currently running Zotero desktop application. No 
 
 ## Scope and limits
 
-**Importing references and converting a manuscript's live citation fields are separate operations.** This version imports the references. It does **not** replace EndNote fields with Zotero fields, renumber citations, regenerate the bibliography, or modify the Word file. Live document conversion is a future feature requiring a mapping from every citation cluster to the imported Zotero items and validation of locators, prefixes, suffixes and citation formatting.
+**Importing references and converting a manuscript's live citation fields are separate operations.** Import leaves the Word file unchanged. Version 0.3.0 adds a separate **Convert EndNote citations to Zotero…** command that creates a new DOCX; see the workflow and limitations below. Zotero's Word add-in is required to refresh and edit the converted citations.
 
 Only metadata actually embedded in the document can be recovered. Abstracts, notes, keywords and other fields may be absent. PDF URLs and file paths are not PDF attachments: this version does not fetch or attach them. The original-metadata note retains the references to such files.
 
@@ -50,7 +50,7 @@ npm test
 npm run build
 ```
 
-The deterministic build writes `dist/traveling-library-0.2.2.xpi` and `dist/SHA256SUMS`. Only files under `src/` enter the XPI. Tests use synthetic records. Manuscripts, recovered references, local paths and user libraries must never be committed.
+The deterministic build writes `dist/traveling-library-0.3.0.xpi` and `dist/SHA256SUMS`. Only files under `src/` enter the XPI. Tests use synthetic records. Manuscripts, recovered references, local paths and user libraries must never be committed.
 
 - `src/core.js`: XML extraction and duplicate planning, independent of Zotero.
 - `src/bootstrap.js`: plugin lifecycle, DOCX ZIP reading, native translation and transactional import.
@@ -121,3 +121,19 @@ New imports always include a readable **EndNote source metadata — readable cop
 For **already imported references**, select them and choose **Tools → Recover embedded metadata for selected references…**. This is offline. It reads retained Original EndNote metadata notes, fills missing supported fields and identifiers, and adds a readable source note once. Existing nonempty fields and tags are unchanged, so existing labeled ISSNs are not silently rewritten. References without saved source notes cannot recover absent metadata through this command; their retained URL can still yield a PMID. Online verification also runs this recovery step first.
 
 These changes have automated parser, mapping, timeout, comparison, mocked-import and recovery tests. Actual Zotero desktop execution is still unverified here.
+
+
+## 0.3.0 — convert existing EndNote Word fields
+
+1. Import the DOCX references into Zotero first. Select a collection in that same library.
+2. Save and close the source document in Word.
+3. In Zotero 8–10, choose **Tools → Convert EndNote citations to Zotero…** and select the saved DOCX.
+4. Preflight must match every citation to exactly one Zotero item. Matching uses the retained source identifier, or an exact DOI plus matching normalized title. It searches the selected collection's library.
+5. Choose an installed in-text CSL style with a bibliography, then **Save converted copy…**. Choose a new filename; existing files cannot be overwritten.
+6. Open the copy in desktop Word with Zotero running. Click **Zotero → Refresh**, then test **Add/Edit Citation** on a converted citation. Use **Document Preferences** to change styles. If no EndNote bibliography field existed, insert one with **Add/Edit Bibliography**.
+
+The new DOCX contains Zotero ITEM/CSL_CITATION fields with real item URIs and embedded CSL data, a Zotero bibliography field when present, and Zotero document preferences. Citation groups, item order, prefix/suffix spaces, page locators and the observed EndNote `ExcludeAuth="1"` setting are retained. Existing visible field results and run formatting remain until Zotero Refresh regenerates them; the bibliography is then generated from cited items and the chosen Zotero style. Manual bibliography edits, EndNote style-specific formatting and uncited bibliography entries are not carried into Zotero's generated bibliography. Other ZIP entries are copied from the original document.
+
+This is an experimental converter with explicit boundaries: standard transitional DOCX complex fields, in-text styles, and citations in the body/footnotes/endnotes. It stops before saving for missing/ambiguous items, unsupported citation settings (including exclude-year/narrative modes), conflicting payloads, tracked citation revisions, content-control/text-box citations, header/footer citations, simple fields, mixed Zotero/EndNote fields, multiple bibliographies, nonstandard custom-property targets or signed packages. It does not run EndNote or Word automation, does not modify the Zotero library, and does not overwrite the original DOCX.
+
+Automated tests validate field JSON, grouped citations, nested DATA removal, preserved text/formatting, matching failures, author suppression, locators, bibliography fields and package preferences. Windows Word Refresh/Add/Edit Citation and Zotero runtime ZIP writing still require desktop verification; successful XML checks alone do not establish that end-to-end behavior.
