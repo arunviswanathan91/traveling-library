@@ -3,9 +3,9 @@
     "traveling-library@arunviswanathan91": {
       "updates": [
         {
-          "version": "0.2.0",
-          "update_link": "https://github.com/arunviswanathan91/traveling-library/raw/refs/heads/main/dist/traveling-library-0.2.0.xpi",
-          "update_hash": "sha256:0059226f53fa7975ad40423e50cc6f3d148d808ae95e4f7442f9536fa6339420",
+          "version": "0.2.1",
+          "update_link": "https://github.com/arunviswanathan91/traveling-library/raw/refs/heads/main/dist/traveling-library-0.2.1.xpi",
+          "update_hash": "sha256:f248f2cfa8989b4e8ae014002758d78870877aceb97e27e6626788ba5d548c72",
           "applications": {
             "zotero": {
               "strict_min_version": "7.0",

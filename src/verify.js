@@ -18,14 +18,16 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
   async function verify(view) {
-    view.status.textContent='Looking up DOI…';view.button.disabled=true;
+    let stage='Starting',start=Date.now();
+    const report=value=>{stage=value;view.status.textContent=stage+'… '+Math.floor((Date.now()-start)/1000)+'s';};
+    const timer=window.setInterval(()=>report(stage),1000);report(stage);view.button.disabled=true;
     try {
-      const result=await args.verify(view.item.id,()=>closed,$('pubmed').checked);
+      const result=await args.verify(view.item.id,()=>closed,$('pubmed').checked,report,window);
       if(closed)return;
       view.result=result;view.status.textContent=result.status;
       view.compare.disabled=!result.changes?.length;
     } catch(e){if(!closed)view.status.textContent='Error — '+e.message;}
-    finally {if(!closed)view.button.disabled=false;}
+    finally {window.clearInterval(timer);if(!closed)view.button.disabled=false;}
   }
   async function run(list) {
     if(busy)return;busy=true;stopped=false;$('all').disabled=true;$('apply').disabled=true;
@@ -39,7 +41,7 @@ window.addEventListener('DOMContentLoaded', () => {
   for(const item of args.items) {
     const tr=el('tr'), title=el('td'),status=el('td'),actions=el('td'),button=el('button'),compare=el('button');
     title.textContent=item.title;const detail=el('small');detail.textContent=item.DOI||'No DOI';title.append(detail);
-    status.textContent='Not checked';button.textContent='Verify DOI';compare.textContent='Review changes';compare.disabled=true;
+    status.textContent='Not checked';button.textContent='Verify reference';compare.textContent='Review changes';compare.disabled=true;
     const view={item,status,button,compare};views.push(view);
     button.addEventListener('click',()=>run([view]));compare.addEventListener('click',()=>review(view));
     actions.append(button,compare);tr.append(title,status,actions);$('rows').append(tr);

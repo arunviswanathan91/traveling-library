@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
-<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Verify references by DOI</title><link rel="stylesheet" href="review.css"/><script src="verify.js" defer="defer"></script></head><body>
-<header><h1>Verify references by DOI</h1><p>Zotero looks up each DOI online. Matching records get missing fields filled; existing values stay unchanged.</p></header>
-<label><input id="pubmed" type="checkbox" checked="checked"/> Prefer PubMed metadata (DOI → PMID; fall back to DOI registry)</label>
+<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Verify references by PMID / DOI</title><link rel="stylesheet" href="review.css"/><script src="verify.js" defer="defer"></script></head><body>
+<header><h1>Verify references by PMID / DOI</h1><p>Existing PMIDs are fetched directly from PubMed; otherwise the DOI is looked up online. Matching records get missing fields filled; existing values stay unchanged.</p></header>
+<label><input id="pubmed" type="checkbox" checked="checked"/> Prefer PubMed metadata (existing PMID first; otherwise DOI → PMID)</label>
 <div><button id="all" class="primary">Verify all / retry unfinished</button> <button id="stop">Stop after current lookup</button> <span id="progress" role="status"></span></div>
 <div class="table-wrap"><table><thead><tr><th>Reference</th><th>Status</th><th>Actions</th></tr></thead><tbody id="rows"></tbody></table></div>
 <section id="comparison" hidden="hidden"><h2>Review changes</h2><p id="reason"></p><div id="differences" style="max-height:200px;overflow:auto"></div><button id="apply">Apply checked changes</button><button id="dismiss">Dismiss</button></section>
-<p class="muted">Only DOI identifiers are submitted for lookup. No PDFs are fetched. Close or stop to leave unfinished references unchanged.</p>
+<p class="muted">Only DOI and PMID identifiers are submitted for lookup. No PDFs are fetched. Close or stop to leave unfinished references unchanged.</p>
 <footer><button id="close">Close</button></footer></body></html>

@@ -8,7 +8,11 @@ var TLVerification = (() => {
   const creatorValue = list => JSON.stringify((list || []).map(c => [c.creatorType,c.firstName || '',c.lastName || '',c.name || '']));
   function compare(local, remote) {
     const reasons = [];
-    if (!remote.DOI || doi(local.DOI) !== doi(remote.DOI)) reasons.push('Retrieved DOI does not match');
+    const samePMID = /^\d+$/.test(local.PMID || '') && local.PMID === remote.PMID;
+    if (local.DOI && remote.DOI && doi(local.DOI)!==doi(remote.DOI)) reasons.push('Retrieved DOI does not match');
+    else if (!samePMID && (!local.DOI || !remote.DOI)) reasons.push('No matching DOI or PMID');
+    if(local.PMID && remote.PMID && local.PMID!==remote.PMID)reasons.push('Retrieved PMID does not match');
+    if(local.PMCID && remote.PMCID && local.PMCID!==remote.PMCID)reasons.push('Retrieved PMCID does not match');
     if (!normalize(local.title) || normalize(local.title) !== normalize(remote.title)) reasons.push('Titles differ');
     const a=authors(local.creators), b=authors(remote.creators);
     if (a.length && (!b.length || a[0] !== b[0])) reasons.push('First authors differ or are unavailable');

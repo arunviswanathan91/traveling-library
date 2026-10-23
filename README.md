@@ -98,3 +98,12 @@ For previously imported references, select items and choose **Tools → Verify s
 - Only fields returned by Zotero's translator can be imported. PubMed coverage, abstracts and complete author lists are not guaranteed. This is bibliographic enrichment, not full-text/PDF retrieval. Missing/invalid DOI references are flagged; automatic title search and standalone PMID-only lookup are not implemented.
 
 Automated tests cover comparison, fallback, conflicting identities and concurrent edits using mocked Zotero APIs. Native desktop dialogs, translation and database integration still require real Zotero testing.
+
+
+### 0.2.1 — embedded identifiers and direct PubMed lookup
+
+New imports extract PMID from a recognized PubMed URL, cross-check a numeric accession number when present, and extract only the `PMC` number from mixed EndNote custom2 text. Zotero 10 native PMID/PMCID fields are supported; older versions use Extra. Other source metadata remains preserved in the optional Original EndNote metadata note, including affiliations and disclosure text that do not map to standard bibliographic fields.
+
+For references already imported, select them and run **Verify selected references by PMID / DOI** with **Prefer PubMed** enabled. Verification recovers missing identifiers from saved Original EndNote metadata notes or the item URL. It then fetches PubMed XML directly by PMID and uses Zotero's PubMed XML import translator, avoiding search-translator discovery. If no source note, URL or PMID was retained, DOI lookup is still available. PMCID is retained and compared but is not independently used to search for articles in this version.
+
+Lookup status shows the current stage and elapsed seconds. HTTP stages time out after 15 seconds, PubMed translation after 15 seconds, and DOI translation after 20 seconds. Timers now run in the verification dialog rather than its modal parent. A failed direct PMID lookup displays an error for retry, without silently adding another DOI lookup. Missing fields are filled only when identifier, title, author and reference type checks agree; existing values require review. No extra plugin is required. Windows Zotero desktop execution remains to be confirmed by user testing.

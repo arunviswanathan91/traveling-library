@@ -24,6 +24,15 @@ var TLCore = (() => {
     value = String(value || '').trim().replace(/^(?:https?:\/\/(?:dx\.)?doi\.org\/|doi:\s*)/i, '');
     return /^10\.\d{4,9}\/\S+$/i.test(value) ? value.toLowerCase() : '';
   }
+  function identifiers(node) {
+    const urls = Array.from(node.getElementsByTagName('url')).map(n => n.textContent.trim());
+    const ids = [...new Set(urls.map(url => url.match(/^https?:\/\/(?:www\.ncbi\.nlm\.nih\.gov\/pubmed|pubmed\.ncbi\.nlm\.nih\.gov)\/(\d+)(?:[/?#]|$)/i)?.[1]).filter(Boolean))];
+    const accession = text(node, 'accession-num');
+    // A numeric accession alone is not necessarily a PubMed identifier.
+    const PMID = ids.length === 1 && (!/^\d+$/.test(accession) || accession === ids[0]) ? ids[0] : '';
+    const pmcs = [...new Set((text(node,'custom2').match(/\bPMC\d+\b/gi) || []).map(x=>x.toUpperCase()))];
+    return {PMID, PMCID:pmcs.length === 1 ? pmcs[0] : '', url:urls.find(u=>/^https?:\/\//i.test(u)) || ''};
+  }
   function decodePayload(value, env) {
     if (value.trim().startsWith('<')) return value.trim();
     const binary = env.atob(value.replace(/\s/g, ''));
@@ -59,7 +68,7 @@ var TLCore = (() => {
           const identity = database && (key.textContent || recNum)
             ? `endnote:${encodeURIComponent(database)}:${encodeURIComponent(key.textContent.trim() || recNum)}`
             : `record:${xml}`;
-          const record = { identity, title, DOI, year: text(node, 'dates/year'),
+          const record = { identity, title, DOI, ...identifiers(node), year: text(node, 'dates/year'),
             author: text(node, 'contributors/authors/author'), xml, locations: [location] };
           const prior = records.get(identity);
           if (!prior) records.set(identity, record);
@@ -150,6 +159,6 @@ var TLCore = (() => {
     });
   }
   const escapeHTML = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  return { extract, doi, parseXML, asEndNoteXML, plan, escapeHTML };
+  return { identifiers, extract, doi, parseXML, asEndNoteXML, plan, escapeHTML };
 })();
 if (typeof module !== 'undefined') module.exports = TLCore;

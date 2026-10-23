@@ -110,7 +110,7 @@ async function translateRecords(records) {
       throw new Error('Reference order/title could not be verified after translation. No references were saved.');
     }
   }
-  return items;
+  return items.map((item,i)=>({...item,...Object.fromEntries(Object.entries(records[i]).filter(([k,v])=>['PMID','PMCID','url'].includes(k)&&v&&!item[k]))}));
 }
 function jsonForItem(raw, marker) {
   // Translation objects contain attachments, functions and internal IDs not accepted by fromJSON.
@@ -181,7 +181,10 @@ async function runImport(window) {
         const row = newRows[i], raw = translated[i];
         const item = new Zotero.Item(raw.itemType);
         item.libraryID = collection.libraryID;
-        item.fromJSON(jsonForItem(raw, row.record.marker));
+        const json=jsonForItem(raw, row.record.marker);
+        delete json.PMID;delete json.PMCID;
+        item.fromJSON(json);
+        for(const key of ['PMID','PMCID'])if(raw[key])setIdentifierField(item,key,raw[key]);
         item.addToCollection(collection.id);
         await item.save();
         ids.push(item.id);
@@ -218,7 +221,7 @@ async function runImport(window) {
 
 function snapshotItem(item) {
   const data=item.toJSON();
-  for(const key of ['PMID','PMCID']) data[key]=(data.extra || '').match(new RegExp('^'+key+':\\s*(\\S+)','m'))?.[1] || '';
+  for(const key of ['PMID','PMCID']) data[key]=data[key] || (data.extra || '').match(new RegExp('^'+key+':\\s*(\\S+)','m'))?.[1] || '';
   return data;
 }
 async function nativeLookup(identifier, window) {
@@ -234,30 +237,86 @@ async function nativeLookup(identifier, window) {
         await translation.translate({libraryID:false,saveAttachments:false});
         return translation.newItems?.[0] || null;
       })(),
-      new Promise((resolve,reject)=>{timer=window.setTimeout(()=>reject(new Error('Lookup timed out; retry this reference')),45000);})
+      new Promise((resolve,reject)=>{timer=window.setTimeout(()=>reject(new Error('Lookup timed out; retry this reference')),20000);})
     ]);
   } finally {window.clearTimeout(timer);}
 }
-async function lookupReference(doi, preferPubMed, window) {
+async function pubmedLookup(pmid, window, report=()=>{}) {
+  report('Fetching PubMed PMID '+pmid);
+  const response=await Zotero.HTTP.request('GET','https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&retmode=xml&tool=traveling_library&id='+encodeURIComponent(pmid),{responseType:'text',timeout:15000});
+  report('Reading PubMed metadata');
+  const translation=new Zotero.Translate.Import();
+  translation.setTranslator('fcf41bed-0cbc-3704-85c7-8062a0068a7a');
+  translation.setString(response.responseText || response.response);
+  let timer;
+  try {
+    await Promise.race([translation.translate({libraryID:false,saveAttachments:false}),new Promise((_,reject)=>{timer=window.setTimeout(()=>reject(new Error('PubMed translation timed out')),15000);})]);
+  } finally {window.clearTimeout(timer);}
+  if(translation.newItems?.length!==1)throw new Error('PubMed did not return exactly one reference');
+  const remote=translation.newItems[0];
+  const actual=remote.PMID || (remote.extra || '').match(/^PMID:\s*(\d+)/m)?.[1];
+  if(String(actual)!==String(pmid))throw new Error('Returned PMID does not match requested PMID');
+  return remote;
+}
+async function lookupReference(doi, preferPubMed, window, knownPMID='', report=()=>{}) {
   let fallback='';
+  if(preferPubMed && knownPMID) {
+    // A known identifier takes the direct route. Surface errors instead of silently
+    // stacking another long search onto a failed direct lookup.
+    return {remote:await pubmedLookup(knownPMID,window,report),source:'PubMed (existing PMID)'};
+  }
   if(preferPubMed) {
     try {
+      report('Searching PubMed by DOI');
       const url='https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax=2&tool=traveling_library&term='+encodeURIComponent('"'+doi+'"[AID]');
-      const response=await Zotero.HTTP.request('GET',url,{responseType:'json',timeout:20000});
+      const response=await Zotero.HTTP.request('GET',url,{responseType:'json',timeout:15000});
       const result=response.response?.esearchresult;
       if(!result || result.error)throw new Error('PubMed search failed');
       if(Number(result.count)===1 && /^\d+$/.test(result.idlist?.[0] || '')) {
         await new Promise(resolve=>window.setTimeout(resolve,400));
-        const remote=await nativeLookup({PMID:result.idlist[0]},window);
-        if(remote && scope.TLCore.doi(remote.DOI)===doi) {
-          remote.extra=[remote.extra || '',`PMID: ${result.idlist[0]}`].join('\n');
-          return {remote,source:'PubMed'};
-        }
+        const remote=await pubmedLookup(result.idlist[0],window,report);
+        if(remote && scope.TLCore.doi(remote.DOI)===doi) return {remote,source:'PubMed'};
         fallback='PubMed record did not confirm the DOI; used DOI lookup.';
       } else fallback=Number(result.count)>1?'Multiple PubMed matches; used DOI lookup.':'No PubMed match; used DOI lookup.';
-    } catch(error){fallback='PubMed unavailable; used DOI lookup.';}
+    } catch(error){fallback='PubMed unavailable ('+error.message+'); used DOI lookup.';}
   }
+  report('Looking up DOI with Zotero');
   return {remote:await nativeLookup({DOI:doi},window),source:'DOI registry',fallback};
+}
+function setIdentifierField(item,key,value) {
+  const fieldID=Zotero.ItemFields?.getID(key);
+  if(fieldID && Zotero.ItemFields.isValidForType(fieldID,item.itemTypeID))item.setField(key,value);
+  else {
+    const extra=item.getField('extra') || '';
+    item.setField('extra',extra.split('\n').filter(line=>!line.startsWith(key+':')).concat(key+': '+value).join('\n').trim());
+  }
+}
+async function recoverIdentifiers(item,window) {
+  const snapshot=snapshotItem(item);
+  if(snapshot.PMID && snapshot.PMCID)return;
+  const values={PMID:new Set(),PMCID:new Set()};
+  if(snapshot.PMID)values.PMID.add(snapshot.PMID);
+  if(snapshot.PMCID)values.PMCID.add(snapshot.PMCID);
+  if(snapshot.url) {
+    const doc=new window.DOMParser().parseFromString('<record/>','application/xml');
+    const url=doc.createElement('url');url.textContent=snapshot.url;doc.documentElement.appendChild(url);
+    const found=scope.TLCore.identifiers(doc.documentElement);if(found.PMID)values.PMID.add(found.PMID);
+  }
+  for(const id of item.getNotes?.() || []) {
+    const note=await Zotero.Items.getAsync(id);
+    const doc=new window.DOMParser().parseFromString(note.getNote(),'text/html');
+    if(doc.querySelector('h2')?.textContent!=='Original EndNote metadata')continue;
+    for(const pre of doc.querySelectorAll('pre')) {
+      const xml=scope.TLCore.parseXML(pre.textContent,window);
+      for(const record of xml.getElementsByTagName('record')) {
+        const found=scope.TLCore.identifiers(record);
+        for(const key of ['PMID','PMCID'])if(found[key])values[key].add(found[key]);
+      }
+    }
+  }
+  const changes=[];
+  for(const key of ['PMID','PMCID'])if(!snapshot[key] && values[key].size===1)changes.push({key,after:[...values[key]][0]});
+  if(changes.length)await applyEnrichment(item.id,changes,snapshot);
 }
 async function applyEnrichment(id, changes, snapshot) {
   const allowed=new Set([...scope.TLVerification.fields,'creators','PMID','PMCID']);
@@ -275,8 +334,7 @@ async function applyEnrichment(id, changes, snapshot) {
       else if(['PMID','PMCID'].includes(change.key)) {
         const regex=change.key==='PMID'?/^\d+$/:/^PMC\d+$/;
         if(!regex.test(change.after))throw new Error('Invalid PubMed identifier');
-        const extra=item.getField('extra') || '';
-        item.setField('extra',extra.split('\n').filter(line=>!line.startsWith(change.key+':')).concat(change.key+': '+change.after).join('\n').trim());
+        setIdentifierField(item,change.key,change.after);
       } else {
         const fieldID=Zotero.ItemFields.getID(change.key);
         if(fieldID && Zotero.ItemFields.isValidForType(fieldID,item.itemTypeID))item.setField(change.key,change.after);
@@ -290,15 +348,18 @@ function openVerification(window, ids, auto=false, preferPubMed=true) {
   if(!items.length){Services.prompt.alert(window,'Traveling Library','Select references to verify first.');return;}
   const args={auto,preferPubMed,items:items.map(item=>({id:item.id,title:item.getField('title'),DOI:item.getField('DOI')})),
     apply:applyEnrichment,
-    verify:async(id,isClosed,usePubMed)=>{
+    verify:async(id,isClosed,usePubMed,report=()=>{},dialogWindow=window)=>{
+      window=dialogWindow;
+      report('Recovering embedded identifiers');
+      await recoverIdentifiers(await Zotero.Items.getAsync(id),window);
       const item=await Zotero.Items.getAsync(id), snapshot=snapshotItem(item);
       const doi=scope.TLCore.doi(snapshot.DOI);
-      if(!doi)return {code:'no-doi',status:'Missing or invalid DOI',changes:[],reasons:[]};
-      const {remote,source,fallback}=await lookupReference(doi,usePubMed,window);
+      if(!doi && !(usePubMed && /^\d+$/.test(snapshot.PMID)))return {code:'no-doi',status:'No usable DOI or PMID',changes:[],reasons:[]};
+      const {remote,source,fallback}=await lookupReference(doi,usePubMed,window,/^\d+$/.test(snapshot.PMID)?snapshot.PMID:'',report);
       if(isClosed())return {code:'cancelled',status:'Cancelled',changes:[],reasons:[]};
       if(!remote)return {code:'not-found',status:'No metadata found — retry available',changes:[],reasons:[]};
       const data=jsonForItem(remote,'');delete data.extra;
-      for(const key of ['PMID','PMCID'])data[key]=(remote.extra || '').match(new RegExp('^'+key+':\\s*(\\S+)','m'))?.[1] || '';
+      for(const key of ['PMID','PMCID'])data[key]=remote[key] || (remote.extra || '').match(new RegExp('^'+key+':\\s*(\\S+)','m'))?.[1] || '';
       const result=scope.TLVerification.compare(snapshot,data);
       // Ignore fields that cannot be written to this item's existing reference type.
       result.changes=result.changes.filter(c=>['creators','PMID','PMCID'].includes(c.key)||Zotero.ItemFields.isValidForType(Zotero.ItemFields.getID(c.key),item.itemTypeID));
