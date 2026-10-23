@@ -1,0 +1,19 @@
+{
+  "addons": {
+    "traveling-library@arunviswanathan91": {
+      "updates": [
+        {
+          "version": "0.1.1",
+          "update_link": "https://github.com/arunviswanathan91/traveling-library/raw/refs/heads/main/dist/traveling-library-0.1.1.xpi",
+          "update_hash": "sha256:e87cc2b91bb823e3c22d83ef6e5bee18631e17b7435da1306d1173a423729ff2",
+          "applications": {
+            "zotero": {
+              "strict_min_version": "7.0",
+              "strict_max_version": "10.0.*"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

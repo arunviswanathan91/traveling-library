@@ -21,7 +21,7 @@ jobs:
       - run: npm test
       - run: npm run build
       - name: Verify committed build
-        run: git diff --exit-code -- dist/
+        run: git diff --exit-code -- dist/ updates.json
       - uses: actions/upload-artifact@v4
         with:
           name: traveling-library-xpi

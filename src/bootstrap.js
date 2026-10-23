@@ -18,11 +18,11 @@ async function startup({ rootURI }) {
           onCommand: () => runImport(Zotero.getMainWindow()) }]
       }));
     }
-  } else {
-    for (const window of Zotero.getMainWindows()) addMenu(window);
   }
+  for (const window of Zotero.getMainWindows()) addMenu(window);
 }
 function addMenu(window) {
+  window.MozXULElement.insertFTLIfNeeded('traveling-library.ftl');
   if (Zotero.MenuManager || window.document.getElementById('traveling-library-import')) return;
   const menu = window.document.createXULElement('menuitem');
   menu.id = 'traveling-library-import';
