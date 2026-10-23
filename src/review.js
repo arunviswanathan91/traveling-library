@@ -27,7 +27,7 @@ window.addEventListener('DOMContentLoaded', () => {
     tr.appendChild(action); $('rows').appendChild(tr);
   }
   $('cancel').addEventListener('click', () => window.close());
-  $('import').addEventListener('click', () => { args.accepted = true; args.preserveRaw = $('raw').checked; window.close(); });
+  $('import').addEventListener('click', () => { args.preferPubMed = $('pubmed').checked; args.verifyAfterImport = $('verify').checked; args.accepted = true; args.preserveRaw = $('raw').checked; window.close(); });
   window.addEventListener('keydown', e => { if (e.key === 'Escape') window.close(); });
   update();
 });

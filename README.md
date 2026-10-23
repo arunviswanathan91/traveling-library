@@ -2,11 +2,11 @@
 
 Import references embedded in an EndNote-cited Word document into the collection selected in Zotero. EndNote itself and an EndNote `.enl` library are not required when the document contains its traveling-library metadata.
 
-**Version 0.1.1 — experimental.** Targets Zotero 7 through 10 desktop. Parsing and matching have automated tests; installation, native translation and database writes still require verification in a running Zotero client. The compatibility range in the manifest permits installation; it is not a claim that every platform/version has been tested.
+**Version 0.2.0 — experimental.** Targets Zotero 7 through 10 desktop. Parsing and matching have automated tests; installation, native translation and database writes still require verification in a running Zotero client. The compatibility range in the manifest permits installation; it is not a claim that every platform/version has been tested.
 
 ## Download and install
 
-[Download traveling-library-0.1.1.xpi](https://github.com/arunviswanathan91/traveling-library/raw/refs/heads/main/dist/traveling-library-0.1.1.xpi)
+[Download traveling-library-0.2.0.xpi](https://github.com/arunviswanathan91/traveling-library/raw/refs/heads/main/dist/traveling-library-0.2.0.xpi)
 
 1. Save the `.xpi` file. Do not unzip it.
 2. In Zotero, open **Tools → Plugins** (called **Add-ons** in some versions).
@@ -28,7 +28,7 @@ The plugin operates inside the currently running Zotero desktop application. No 
 - Flags multiple existing matches for resolution. It never automatically merges on title alone. Distinct source records with the same DOI are preserved on first import, since the shared DOI could be a source error.
 - Creates new items and collection memberships within one Zotero database transaction.
 - Preserves translator-generated notes for metadata without a standard Zotero field. By default, each new item also gets an escaped original-metadata note, including differing embedded versions of a source record.
-- Uses only local files and Zotero's local APIs. Reference extraction makes no network requests. Zotero can check the public GitHub update manifest and download plugin updates; document contents are never included in those requests. Zotero's own configured synchronization may subsequently sync imported items and notes.
+- Reference extraction uses local files and Zotero's local APIs. Optional DOI verification sends identifiers to NCBI and Zotero's metadata providers. It does not upload your manuscript. Reference extraction itself makes no network requests. Zotero can check the public GitHub update manifest and download plugin updates; document contents are never included in those requests. Zotero's own configured synchronization may subsequently sync imported items and notes.
 
 ## Scope and limits
 
@@ -50,7 +50,7 @@ npm test
 npm run build
 ```
 
-The deterministic build writes `dist/traveling-library-0.1.1.xpi` and `dist/SHA256SUMS`. Only files under `src/` enter the XPI. Tests use synthetic records. Manuscripts, recovered references, local paths and user libraries must never be committed.
+The deterministic build writes `dist/traveling-library-0.2.0.xpi` and `dist/SHA256SUMS`. Only files under `src/` enter the XPI. Tests use synthetic records. Manuscripts, recovered references, local paths and user libraries must never be committed.
 
 - `src/core.js`: XML extraction and duplicate planning, independent of Zotero.
 - `src/bootstrap.js`: plugin lifecycle, DOCX ZIP reading, native translation and transactional import.
@@ -81,4 +81,20 @@ This is an independent community plugin, not an official Zotero or EndNote produ
 
 ## 0.1.1 installation fix
 
-The 0.1.0 package omitted the mandatory `applications.zotero.update_url` and limited compatibility to Zotero 8. Version 0.1.1 supplies a hosted update manifest with a SHA-256 build hash and permits Zotero versions through 10.0.x, including 10.0.6. It also loads the Fluent resource needed by the Zotero 8+ menu API. Manifest checks now cover these requirements. Zotero 10 API signatures were checked against current upstream source; an actual desktop installation has not been exercised in this build environment.
+The 0.1.0 package omitted the mandatory `applications.zotero.update_url` and limited compatibility to Zotero 8. Version 0.2.0 supplies a hosted update manifest with a SHA-256 build hash and permits Zotero versions through 10.0.x, including 10.0.6. It also loads the Fluent resource needed by the Zotero 8+ menu API. Manifest checks now cover these requirements. Zotero 10 API signatures were checked against current upstream source; an actual desktop installation has not been exercised in this build environment.
+
+## 0.2.0 DOI verification and PubMed enrichment
+
+In the import preview, enable **Verify and enrich references using DOI after import**. **Prefer PubMed metadata** is selected by default and can be disabled. Import completes first, then a separate verification window opens. Existing imports remain available if verification fails or is stopped.
+
+For previously imported references, select items and choose **Tools → Verify selected references by DOI…**, or the same command in the item context menu (Zotero 8+).
+
+- **Verify DOI** checks one reference; **Verify all / retry unfinished** checks references sequentially.
+- With PubMed enabled, an exact DOI search using NCBI ESearch obtains a PMID. Zotero's native PMID translator retrieves metadata; the returned DOI must match. No result, multiple results or a PubMed error falls back to Zotero's native DOI lookup.
+- A matching normalized title, DOI, reference type and (when present) first author permits **missing fields only** to be filled automatically. This conservative check flags substantive or ambiguous differences for review; it is not proof of scientific accuracy.
+- **Review changes** shows current/retrieved values. Explicitly check fields and choose **Apply checked changes** to replace existing values. Edits made to an item since lookup are detected and require reverification.
+- PMID and PMCID are kept in Extra without removing the source marker or custom Extra content. Notes, attachments, collection membership and the Zotero item key are retained.
+- Lookup is sequential with pauses, timeouts, stop and retry controls. Stopping finishes the current check; closing discards pending lookup results. Providers can still rate-limit requests shared with other applications on the same IP.
+- Only fields returned by Zotero's translator can be imported. PubMed coverage, abstracts and complete author lists are not guaranteed. This is bibliographic enrichment, not full-text/PDF retrieval. Missing/invalid DOI references are flagged; automatic title search and standalone PMID-only lookup are not implemented.
+
+Automated tests cover comparison, fallback, conflicting identities and concurrent edits using mocked Zotero APIs. Native desktop dialogs, translation and database integration still require real Zotero testing.

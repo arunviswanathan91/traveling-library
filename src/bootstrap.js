@@ -5,6 +5,7 @@ const PLUGIN_ID = 'traveling-library@arunviswanathan91';
 async function startup({ rootURI }) {
   scope = { Zotero, Services, Cc, Ci };
   Services.scriptloader.loadSubScript(rootURI + 'core.js', scope);
+  Services.scriptloader.loadSubScript(rootURI + 'verification.js', scope);
   chromeHandle = Cc['@mozilla.org/addons/addon-manager-startup;1']
     .getService(Ci.amIAddonManagerStartup)
     .registerChrome(Services.io.newURI(rootURI + 'manifest.json'), [
@@ -18,6 +19,14 @@ async function startup({ rootURI }) {
           onCommand: () => runImport(Zotero.getMainWindow()) }]
       }));
     }
+  }
+  if (Zotero.MenuManager) {
+    for (const target of ['main/menubar/tools','main/library/item']) menuIDs.push(Zotero.MenuManager.registerMenu({
+      menuID:'traveling-library-verify-'+target.replaceAll('/','-'),pluginID:PLUGIN_ID,target,
+      menus:[{menuType:'menuitem',l10nID:'traveling-library-verify',onCommand:()=>{
+        const win=Zotero.getMainWindow();openVerification(win,win.ZoteroPane.getSelectedItems().filter(i=>i.isRegularItem()).map(i=>i.id));
+      }}]
+    }));
   }
   for (const window of Zotero.getMainWindows()) addMenu(window);
 }
@@ -197,6 +206,7 @@ async function runImport(window) {
     Services.prompt.alert(window, 'Traveling Library',
       `${newRows.length} new references imported.\n${selected.length - newRows.length} existing references added to the collection.\n\nDestination: ${args.destination}\n\nThe Word document and its EndNote citation fields were not changed.`);
     if (ids.length) await pane.selectItems(ids);
+    if (args.verifyAfterImport) openVerification(window,ids,true,args.preferPubMed);
   } catch (error) {
     Zotero.logError(error);
     Services.prompt.alert(window, 'Traveling Library', error.message || String(error));
@@ -204,4 +214,101 @@ async function runImport(window) {
     progress?.close();
     running = false;
   }
+}
+
+function snapshotItem(item) {
+  const data=item.toJSON();
+  for(const key of ['PMID','PMCID']) data[key]=(data.extra || '').match(new RegExp('^'+key+':\\s*(\\S+)','m'))?.[1] || '';
+  return data;
+}
+async function nativeLookup(identifier, window) {
+  const translation=new Zotero.Translate.Search();
+  translation.setIdentifier(identifier);
+  let timer;
+  try {
+    return await Promise.race([
+      (async()=>{
+        const translators=await translation.getTranslators();
+        if(!translators.length)return null;
+        translation.setTranslator(translators);
+        await translation.translate({libraryID:false,saveAttachments:false});
+        return translation.newItems?.[0] || null;
+      })(),
+      new Promise((resolve,reject)=>{timer=window.setTimeout(()=>reject(new Error('Lookup timed out; retry this reference')),45000);})
+    ]);
+  } finally {window.clearTimeout(timer);}
+}
+async function lookupReference(doi, preferPubMed, window) {
+  let fallback='';
+  if(preferPubMed) {
+    try {
+      const url='https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax=2&tool=traveling_library&term='+encodeURIComponent('"'+doi+'"[AID]');
+      const response=await Zotero.HTTP.request('GET',url,{responseType:'json',timeout:20000});
+      const result=response.response?.esearchresult;
+      if(!result || result.error)throw new Error('PubMed search failed');
+      if(Number(result.count)===1 && /^\d+$/.test(result.idlist?.[0] || '')) {
+        await new Promise(resolve=>window.setTimeout(resolve,400));
+        const remote=await nativeLookup({PMID:result.idlist[0]},window);
+        if(remote && scope.TLCore.doi(remote.DOI)===doi) {
+          remote.extra=[remote.extra || '',`PMID: ${result.idlist[0]}`].join('\n');
+          return {remote,source:'PubMed'};
+        }
+        fallback='PubMed record did not confirm the DOI; used DOI lookup.';
+      } else fallback=Number(result.count)>1?'Multiple PubMed matches; used DOI lookup.':'No PubMed match; used DOI lookup.';
+    } catch(error){fallback='PubMed unavailable; used DOI lookup.';}
+  }
+  return {remote:await nativeLookup({DOI:doi},window),source:'DOI registry',fallback};
+}
+async function applyEnrichment(id, changes, snapshot) {
+  const allowed=new Set([...scope.TLVerification.fields,'creators','PMID','PMCID']);
+  await Zotero.DB.executeTransaction(async()=>{
+    const item=await Zotero.Items.getAsync(id);
+    if(!item || item.deleted || !Zotero.Libraries.get(item.libraryID).editable)throw new Error('Reference is unavailable or read-only.');
+    const current=snapshotItem(item);
+    // Protect concurrent edits made while the lookup/review dialog was open.
+    for(const key of ['title','DOI','creators',...changes.map(c=>c.key)]) {
+      if(JSON.stringify(current[key] || '')!==JSON.stringify(snapshot[key] || ''))throw new Error('Reference changed since verification. Verify it again before applying changes.');
+    }
+    for(const change of changes) {
+      if(!allowed.has(change.key))throw new Error('Unsupported metadata field');
+      if(change.key==='creators')item.setCreators(change.after.map(c=>c.name?{lastName:c.name,fieldMode:1,creatorType:c.creatorType}:c));
+      else if(['PMID','PMCID'].includes(change.key)) {
+        const regex=change.key==='PMID'?/^\d+$/:/^PMC\d+$/;
+        if(!regex.test(change.after))throw new Error('Invalid PubMed identifier');
+        const extra=item.getField('extra') || '';
+        item.setField('extra',extra.split('\n').filter(line=>!line.startsWith(change.key+':')).concat(change.key+': '+change.after).join('\n').trim());
+      } else {
+        const fieldID=Zotero.ItemFields.getID(change.key);
+        if(fieldID && Zotero.ItemFields.isValidForType(fieldID,item.itemTypeID))item.setField(change.key,change.after);
+      }
+    }
+    await item.save();
+  });
+}
+function openVerification(window, ids, auto=false, preferPubMed=true) {
+  const items=ids.map(id=>Zotero.Items.get(id)).filter(item=>item?.isRegularItem()&&!item.deleted);
+  if(!items.length){Services.prompt.alert(window,'Traveling Library','Select references to verify first.');return;}
+  const args={auto,preferPubMed,items:items.map(item=>({id:item.id,title:item.getField('title'),DOI:item.getField('DOI')})),
+    apply:applyEnrichment,
+    verify:async(id,isClosed,usePubMed)=>{
+      const item=await Zotero.Items.getAsync(id), snapshot=snapshotItem(item);
+      const doi=scope.TLCore.doi(snapshot.DOI);
+      if(!doi)return {code:'no-doi',status:'Missing or invalid DOI',changes:[],reasons:[]};
+      const {remote,source,fallback}=await lookupReference(doi,usePubMed,window);
+      if(isClosed())return {code:'cancelled',status:'Cancelled',changes:[],reasons:[]};
+      if(!remote)return {code:'not-found',status:'No metadata found — retry available',changes:[],reasons:[]};
+      const data=jsonForItem(remote,'');delete data.extra;
+      for(const key of ['PMID','PMCID'])data[key]=(remote.extra || '').match(new RegExp('^'+key+':\\s*(\\S+)','m'))?.[1] || '';
+      const result=scope.TLVerification.compare(snapshot,data);
+      // Ignore fields that cannot be written to this item's existing reference type.
+      result.changes=result.changes.filter(c=>['creators','PMID','PMCID'].includes(c.key)||Zotero.ItemFields.isValidForType(Zotero.ItemFields.getID(c.key),item.itemTypeID));
+      const missing=result.matched?result.changes.filter(c=>c.missing):[];
+      if(missing.length&&!isClosed())await applyEnrichment(id,missing,snapshot);
+      const fresh=snapshotItem(await Zotero.Items.getAsync(id));
+      const remaining=scope.TLVerification.compare(fresh,data);
+      remaining.changes=remaining.changes.filter(c=>['creators','PMID','PMCID'].includes(c.key)||Zotero.ItemFields.isValidForType(Zotero.ItemFields.getID(c.key),item.itemTypeID));
+      return {...remaining,snapshot:fresh,code:result.matched?'verified':'conflict',
+        status:(result.matched?`Verified (${source}); ${missing.length} fields filled`:`Needs review (${source})`)+(fallback?' — '+fallback:'')};
+    }};
+  window.openDialog('chrome://traveling-library/content/verify.xhtml','traveling-library-verify','chrome,centerscreen,resizable,dialog,modal,width=1000,height=740',args);
 }
