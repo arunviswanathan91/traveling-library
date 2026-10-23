@@ -1,6 +1,6 @@
 /* Pure comparison rules. Bibliographic identity must agree before automatic enrichment. */
 var TLVerification = (() => {
-  const fields = ['PMID','PMCID','title','shortTitle','publicationTitle','journalAbbreviation','date','volume','issue','pages','DOI','ISSN','ISBN','url','abstractNote','language','publisher','place','edition','series','seriesTitle'];
+  const fields = ['libraryCatalog','callNumber','PMID','PMCID','title','shortTitle','publicationTitle','journalAbbreviation','date','volume','issue','pages','DOI','ISSN','ISBN','url','abstractNote','language','publisher','place','edition','series','seriesTitle'];
   const normalize = value => String(value || '').normalize('NFKD').replace(/\p{M}/gu,'').replace(/<[^>]*>/g,'').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
   const doi = value => String(value || '').trim().replace(/^(https?:\/\/(dx\.)?doi\.org\/|doi:\s*)/i,'').toLowerCase();
   const empty = value => value == null || value === '' || (Array.isArray(value) && !value.length);

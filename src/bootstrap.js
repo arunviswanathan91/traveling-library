@@ -6,6 +6,7 @@ async function startup({ rootURI }) {
   scope = { Zotero, Services, Cc, Ci };
   Services.scriptloader.loadSubScript(rootURI + 'core.js', scope);
   Services.scriptloader.loadSubScript(rootURI + 'verification.js', scope);
+  Services.scriptloader.loadSubScript(rootURI + 'metadata.js', scope);
   chromeHandle = Cc['@mozilla.org/addons/addon-manager-startup;1']
     .getService(Ci.amIAddonManagerStartup)
     .registerChrome(Services.io.newURI(rootURI + 'manifest.json'), [
@@ -28,6 +29,10 @@ async function startup({ rootURI }) {
       }}]
     }));
   }
+  if(Zotero.MenuManager)menuIDs.push(Zotero.MenuManager.registerMenu({
+    menuID:'traveling-library-recover',pluginID:PLUGIN_ID,target:'main/menubar/tools',
+    menus:[{menuType:'menuitem',l10nID:'traveling-library-recover',onCommand:()=>recoverSelected(Zotero.getMainWindow())}]
+  }));
   for (const window of Zotero.getMainWindows()) addMenu(window);
 }
 function addMenu(window) {
@@ -96,7 +101,7 @@ async function chooseFile(window) {
   if (await picker.show() !== picker.returnOK) return null;
   return picker.file;
 }
-async function translateRecords(records) {
+async function translateRecords(records, window) {
   const translation = new Zotero.Translate.Import();
   translation.setString(scope.TLCore.asEndNoteXML(records));
   translation.setTranslator('eb7059a4-35ec-4961-a915-3cf58eb9784b');
@@ -110,7 +115,13 @@ async function translateRecords(records) {
       throw new Error('Reference order/title could not be verified after translation. No references were saved.');
     }
   }
-  return items.map((item,i)=>({...item,...Object.fromEntries(Object.entries(records[i]).filter(([k,v])=>['PMID','PMCID','url'].includes(k)&&v&&!item[k]))}));
+  return items.map((item,i)=>{
+    const node=scope.TLCore.parseXML(records[i].xml,window).documentElement;
+    const result=scope.TLMetadata.supplement(item,node);
+    for(const key of ['PMID','PMCID'])if(records[i][key]&&!result[key])result[key]=records[i][key];
+    result.notes=[...(result.notes || []),scope.TLMetadata.note((records[i].variants || [records[i].xml]).map(xml=>scope.TLCore.parseXML(xml,window).documentElement))].filter(Boolean);
+    return result;
+  });
 }
 function jsonForItem(raw, marker) {
   // Translation objects contain attachments, functions and internal IDs not accepted by fromJSON.
@@ -165,7 +176,7 @@ async function runImport(window) {
     const newRows = selected.filter(row => row.action === 'new');
     progress = new Zotero.ProgressWindow({ closeOnClick: false });
     progress.changeHeadline('Importing EndNote references…'); progress.show();
-    const translated = newRows.length ? await translateRecords(newRows.map(row => row.record)) : [];
+    const translated = newRows.length ? await translateRecords(newRows.map(row => row.record),window) : [];
     const ids = [];
     // Import and collection membership changes either all commit or all roll back.
     await Zotero.DB.executeTransaction(async () => {
@@ -291,9 +302,10 @@ function setIdentifierField(item,key,value) {
     item.setField('extra',extra.split('\n').filter(line=>!line.startsWith(key+':')).concat(key+': '+value).join('\n').trim());
   }
 }
-async function recoverIdentifiers(item,window) {
+async function recoverIdentifiers(item,window,isClosed=()=>false) {
   const snapshot=snapshotItem(item);
-  if(snapshot.PMID && snapshot.PMCID)return;
+  const sourceRecords=[];
+  let hasReadableNote=false;
   const values={PMID:new Set(),PMCID:new Set()};
   if(snapshot.PMID)values.PMID.add(snapshot.PMID);
   if(snapshot.PMCID)values.PMCID.add(snapshot.PMCID);
@@ -305,10 +317,12 @@ async function recoverIdentifiers(item,window) {
   for(const id of item.getNotes?.() || []) {
     const note=await Zotero.Items.getAsync(id);
     const doc=new window.DOMParser().parseFromString(note.getNote(),'text/html');
+    if(doc.querySelector('h2')?.textContent==='EndNote source metadata — readable copy')hasReadableNote=true;
     if(doc.querySelector('h2')?.textContent!=='Original EndNote metadata')continue;
     for(const pre of doc.querySelectorAll('pre')) {
       const xml=scope.TLCore.parseXML(pre.textContent,window);
       for(const record of xml.getElementsByTagName('record')) {
+        sourceRecords.push(record);
         const found=scope.TLCore.identifiers(record);
         for(const key of ['PMID','PMCID'])if(found[key])values[key].add(found[key]);
       }
@@ -316,7 +330,22 @@ async function recoverIdentifiers(item,window) {
   }
   const changes=[];
   for(const key of ['PMID','PMCID'])if(!snapshot[key] && values[key].size===1)changes.push({key,after:[...values[key]][0]});
+  if(scope.TLMetadata && sourceRecords.length) {
+    const candidates=new Map();
+    for(const record of sourceRecords)for(const [key,val] of Object.entries(scope.TLMetadata.read(record).fields)) {
+      if(!candidates.has(key))candidates.set(key,new Set());candidates.get(key).add(val);
+    }
+    for(const [key,vals] of candidates)if(!snapshot[key]&&vals.size===1&&Zotero.ItemFields.isValidForType(Zotero.ItemFields.getID(key),item.itemTypeID))changes.push({key,after:[...vals][0]});
+  }
+  if(isClosed())return;
   if(changes.length)await applyEnrichment(item.id,changes,snapshot);
+  if(scope.TLMetadata && sourceRecords.length && !hasReadableNote) {
+    await Zotero.DB.executeTransaction(async()=>{
+      if(item.deleted || !Zotero.Libraries.get(item.libraryID).editable)throw new Error('Reference is unavailable or read-only.');
+      const note=new Zotero.Item('note');note.libraryID=item.libraryID;note.parentID=item.id;
+      note.setNote(scope.TLMetadata.note(sourceRecords));await note.save();
+    });
+  }
 }
 async function applyEnrichment(id, changes, snapshot) {
   const allowed=new Set([...scope.TLVerification.fields,'creators','PMID','PMCID']);
@@ -351,7 +380,8 @@ function openVerification(window, ids, auto=false, preferPubMed=true) {
     verify:async(id,isClosed,usePubMed,report=()=>{},dialogWindow=window)=>{
       window=dialogWindow;
       report('Recovering embedded identifiers');
-      await recoverIdentifiers(await Zotero.Items.getAsync(id),window);
+      await recoverIdentifiers(await Zotero.Items.getAsync(id),window,isClosed);
+      if(isClosed())return {code:'cancelled',status:'Cancelled',changes:[],reasons:[]};
       const item=await Zotero.Items.getAsync(id), snapshot=snapshotItem(item);
       const doi=scope.TLCore.doi(snapshot.DOI);
       if(!doi && !(usePubMed && /^\d+$/.test(snapshot.PMID)))return {code:'no-doi',status:'No usable DOI or PMID',changes:[],reasons:[]};
@@ -372,4 +402,19 @@ function openVerification(window, ids, auto=false, preferPubMed=true) {
         status:(result.matched?`Verified (${source}); ${missing.length} fields filled`:`Needs review (${source})`)+(fallback?' — '+fallback:'')};
     }};
   window.openDialog('chrome://traveling-library/content/verify.xhtml','traveling-library-verify','chrome,centerscreen,resizable,dialog,modal,width=1000,height=740',args);
+}
+
+async function recoverSelected(window) {
+  if(running)return;running=true;
+  let completed=0;const errors=[];
+  try {
+    const items=window.ZoteroPane.getSelectedItems().filter(i=>i.isRegularItem()&&!i.deleted);
+    if(!items.length)throw new Error('Select imported references first.');
+    for(const item of items) {
+      try {await recoverIdentifiers(item,window);completed++;}
+      catch(error){errors.push(item.id+': '+error.message);}
+    }
+    Services.prompt.alert(window,'Traveling Library',`${completed} references checked for recoverable source metadata. Existing values were preserved. No online requests were made.`+(errors.length?'\nErrors:\n'+errors.join('\n'):''));
+  } catch(error){Services.prompt.alert(window,'Traveling Library',error.message);}
+  finally{running=false;}
 }

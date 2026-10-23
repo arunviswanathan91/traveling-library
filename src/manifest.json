@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Traveling Library",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Import embedded EndNote references from Word documents into a selected Zotero collection.",
   "author": "Arun Viswanathan",
   "homepage_url": "https://github.com/arunviswanathan91/traveling-library",

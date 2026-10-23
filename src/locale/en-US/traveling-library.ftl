@@ -3,3 +3,6 @@ traveling-library-import =
 
 traveling-library-verify =
     .label = Verify selected references by PMID / DOI…
+
+traveling-library-recover =
+    .label = Recover embedded metadata for selected references…

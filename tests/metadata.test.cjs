@@ -1,0 +1,15 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const {DOMParser,XMLSerializer}=require('@xmldom/xmldom');
+const M=require('../src/metadata'),Core=require('../src/core');
+const env={DOMParser,XMLSerializer};
+const xml='<record><ref-type name="Journal Article">17</ref-type><titles><title>Synthetic study</title><short-title>Study</short-title></titles><abstract>Line one\nLine two</abstract><auth-address>Example University &amp; Institute</auth-address><periodical><abbr-1>J Test</abbr-1></periodical><isbn>1234-567X (Electronic) 1234-567X (Linking) 2345-6789 (Print)</isbn><edition>2024/01/02</edition><keywords><keyword>Term</keyword><keyword>Disclosure fragment.</keyword></keywords><custom2>PMC123 disclosure retained</custom2><urls><pdf-urls><url>internal-pdf://private.pdf</url></pdf-urls><related-urls><url>https://pubmed.ncbi.nlm.nih.gov/123/</url></related-urls></urls><unknown-field>Unmapped content</unknown-field></record>';
+const parse=s=>Core.parseXML(s,env).documentElement;
+test('supplements usable bibliographic fields and normalizes duplicate labeled ISSNs',()=>{const r=M.supplement({title:'Synthetic study',ISSN:'1234-567X (Electronic)'},parse(xml));assert.equal(r.ISSN,'1234-567X, 2345-6789');assert.equal(r.url,'https://pubmed.ncbi.nlm.nih.gov/123/');assert.equal(r.journalAbbreviation,'J Test');assert.equal(r.abstractNote,'Line one\nLine two');assert.equal(r.edition,undefined);});
+test('readable note retains custom text, affiliations, original dates, keywords and unknown fields',()=>{const note=M.note([parse(xml),parse(xml)]);for(const value of ['disclosure retained','Example University &amp; Institute','2024/01/02','Disclosure fragment.','Unmapped content','internal-pdf://private.pdf'])assert.ok(note.includes(value));assert.equal(note.split('Unmapped content').length,2);});
+test('source text is escaped and existing abstract is not overwritten',()=>{const node=parse('<record><abstract>&lt;script&gt;test&lt;/script&gt;</abstract></record>');assert.ok(!M.note([node]).includes('<script>'));assert.equal(M.supplement({abstractNote:'User abstract'},node).abstractNote,'User abstract');});
+test('book ISBN is not interpreted as ISSN and attachment URL is not used as item URL',()=>{const node=parse('<record><ref-type>6</ref-type><isbn>1234-567X</isbn><urls><pdf-urls><url>https://example.com/file.pdf</url></pdf-urls></urls></record>');assert.deepEqual(M.read(node).fields,{});});
+test('native translation output gets supplemented and receives readable note',async()=>{
+ const ctx=vm.createContext({console,Set,Promise});vm.runInContext(fs.readFileSync('src/bootstrap.js','utf8'),ctx);ctx.scope={TLCore:Core,TLMetadata:M};
+ ctx.Zotero={Translate:{Import:class {setString(){}setTranslator(){}async translate(){this.newItems=[{title:'Synthetic study',itemType:'journalArticle',notes:[]}];}}}};
+ const records=[{xml,title:'Synthetic study',PMID:'123',PMCID:'PMC123'}];const [out]=await ctx.translateRecords(records,env);assert.equal(out.PMID,'123');assert.equal(out.url,'https://pubmed.ncbi.nlm.nih.gov/123/');assert.match(out.notes[0],/unknown-field/);
+});
