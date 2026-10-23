@@ -2,12 +2,25 @@
 var chromeHandle, scope, menuIDs = [], running = false;
 const PLUGIN_ID = 'traveling-library@arunviswanathan91';
 
+function loadPluginScripts(rootURI) {
+  const loaded = { Zotero, Services, Cc, Ci };
+  // The JAR URI may stay the same across hot updates. Never mix scripts from
+  // the previous XPI's bytecode cache with the newly installed bootstrap.
+  for (const file of ['core.js','verification.js','metadata.js','conversion.js']) {
+    Services.scriptloader.loadSubScriptWithOptions(rootURI + file, { target: loaded, ignoreCache: true });
+  }
+  const required = { TLCore: ['decodePayload','extract','doi','parseXML','plan'],
+    TLVerification: ['compare'], TLMetadata: ['read','note','supplement'],
+    TLConversion: ['convert','documentSettings'] };
+  for (const [module, methods] of Object.entries(required)) {
+    if (methods.some(method => typeof loaded[module]?.[method] !== 'function')) {
+      throw new Error('Traveling Library could not load a complete set of plugin files. Fully quit and reopen Zotero. If this persists, reinstall the latest XPI.');
+    }
+  }
+  return loaded;
+}
 async function startup({ rootURI }) {
-  scope = { Zotero, Services, Cc, Ci };
-  Services.scriptloader.loadSubScript(rootURI + 'core.js', scope);
-  Services.scriptloader.loadSubScript(rootURI + 'verification.js', scope);
-  Services.scriptloader.loadSubScript(rootURI + 'metadata.js', scope);
-  Services.scriptloader.loadSubScript(rootURI + 'conversion.js', scope);
+  scope = loadPluginScripts(rootURI);
   chromeHandle = Cc['@mozilla.org/addons/addon-manager-startup;1']
     .getService(Ci.amIAddonManagerStartup)
     .registerChrome(Services.io.newURI(rootURI + 'manifest.json'), [

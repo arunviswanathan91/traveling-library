@@ -74,6 +74,7 @@ var TLConversion = (() => {
     field.begin.removeAttributeNS(W,'fldLock');field.begin.removeAttributeNS(W,'dirty');
   }
   function convert(parts,items,env,core,hash,random) {
+    if(['decodePayload','parseXML','doi'].some(key=>typeof core?.[key]!=='function'))throw new Error('Traveling Library parser files are out of date. Fully quit and reopen Zotero, then retry. No document was saved.');
     const changes={},errors=[],plans=[];let citations=0,bibliographies=0,itemOccurrences=0;
     for(const [name,xml] of Object.entries(parts)) {
       if(!/^word\/(document|footnotes|endnotes|header\d*|footer\d*)\.xml$/.test(name)){if(/^word\//.test(name)&&/ADDIN\s+EN\./i.test(xml))errors.push(name+': EndNote fields in this document part are unsupported');continue;}
