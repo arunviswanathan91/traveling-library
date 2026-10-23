@@ -1,0 +1,13 @@
+{
+  "name": "traveling-library",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A Zotero plugin for importing EndNote traveling libraries from DOCX files",
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "build": "python3 scripts/build.py"
+  },
+  "devDependencies": {
+    "@xmldom/xmldom": "0.9.12"
+  }
+}

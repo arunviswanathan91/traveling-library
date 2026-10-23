@@ -1,0 +1,30 @@
+name: Test and build
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Verify committed build
+        run: git diff --exit-code -- dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: traveling-library-xpi
+          path: |
+            dist/*.xpi
+            dist/SHA256SUMS

@@ -1,0 +1,7 @@
+node_modules/
+*.docx
+*.doc
+*.enl
+*.Data/
+private-tests/
+*.log

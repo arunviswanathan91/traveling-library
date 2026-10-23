@@ -1,0 +1,12 @@
+:root { color-scheme: light dark; font: 14px system-ui, sans-serif; }
+body { margin: 0; padding: 24px; background: Canvas; color: CanvasText; display: flex; flex-direction: column; height: calc(100vh - 48px); gap: 12px; }
+h1 { font-size: 23px; margin: 0 0 8px; } p { margin: 4px 0; }
+#destination { font-weight: 600; } .muted { opacity: .75; line-height: 1.5; }
+#summary { padding: 12px; background: color-mix(in srgb, #287ea1 12%, Canvas); border-radius: 6px; }
+.table-wrap { flex: 1; overflow: auto; border: 1px solid GrayText; border-radius: 6px; min-height: 150px; }
+table { width: 100%; border-collapse: collapse; } th { text-align: left; position: sticky; top: 0; background: Canvas; }
+td, th { padding: 10px; border-bottom: 1px solid color-mix(in srgb, GrayText 30%, Canvas); }
+td small { display: block; opacity: .7; margin-top: 4px; } .option { line-height: 1.6; }
+footer { display: flex; justify-content: flex-end; gap: 10px; }
+button { font: inherit; padding: 8px 14px; cursor: pointer; border: 1px solid GrayText; border-radius: 5px; }
+.primary { background: #176c91; color: white; border-color: #176c91; } button:disabled { opacity: .5; cursor: default; }
