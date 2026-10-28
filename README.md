@@ -107,4 +107,18 @@ This direction uses metadata embedded in Zotero's citation fields, not subsequen
 - Citation managers regenerate formatting on refresh. Exact round-trip formatting and manual bibliography edits are not guaranteed.
 - Automated field and package checks do not establish Word add-in compatibility. Actual Zotero Refresh/Add/Edit Citation and EndNote recognition/editing require desktop validation.
 
+## Version history
+
+| Version | What changed |
+| --- | --- |
+| **0.4.0** | Added experimental **Zotero → EndNote** document conversion, including embedded reference records and bibliography fields. |
+| **0.3.2** | Replaced the overlapping citation-style dropdown with a searchable, scrollable list. |
+| **0.3.1** | Fixed script loading after updates and added checks for the missing-parser error during conversion. |
+| **0.3.0** | Added **EndNote → Zotero** document conversion, linked to imported Zotero references. |
+| **0.2.2** | Added readable source-metadata notes, broader metadata import and offline recovery for existing imports. |
+| **0.2.1** | Added extraction of embedded PMID/PMCID values, direct PubMed lookup by PMID and clearer lookup progress/timeouts. |
+| **0.2.0** | Added individual and batch reference verification, DOI → PubMed lookup and review of proposed metadata changes. |
+| **0.1.1** | Corrected installation settings and extended the allowed Zotero compatibility range through version 10. |
+| **0.1.0** | Initial import of EndNote references embedded in Word documents into Zotero collections. |
+
 This is an independent community plugin, not an official Zotero or EndNote product.
